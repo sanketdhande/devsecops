@@ -1,4 +1,4 @@
-name: SAST Scan
+name: SAST and Image Scan
 
 on: [push]
 
@@ -11,7 +11,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    - name: Set up python
+    - name: Set up Python
       uses: actions/setup-python@v2
       with:
         python-version: 3.8
@@ -21,7 +21,7 @@ jobs:
 
     - name: Run Bandit Scan
       run: bandit -ll -ii -r . -f json -o bandit-report.json
-      
+
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       if: always()
@@ -36,19 +36,28 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-      
-      - name: Set up Docker
-        uses: docker-practice/actions-setup-docker@v1
-        with:
-          docker_version: '28.0.1'
+
+      - name: Configure Docker Daemon (if needed)
+        run: |
+          echo '{ "log-driver": "json-file", "log-level": "warn" }' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Check Docker Status
+        run: sudo systemctl status docker || sudo systemctl start docker
 
       - name: Build Docker Image
         run: docker build -f Dockerfile -t myapp:latest .
-      
-      - name: Docker Scout Scan
+
+      - name: Install Docker Scout CLI
         run: |
           curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh -o install-scout.sh
           sh install-scout.sh
-          echo ${{ secrets.DOCKER_PASS }} | docker login -u ${{ secrets.DOCKER_USER }} --password-stdin
-          docker scout quickview
-          docker scout cves
+
+      - name: Authenticate with Docker Hub
+        run: echo "${{ secrets.DOCKER_PASS }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
+
+      - name: Run Docker Scout Quickview
+        run: docker scout quickview myapp:latest
+
+      - name: Run Docker Scout CVE Scan
+        run: docker scout cves myapp:latest
